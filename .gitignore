@@ -32,3 +32,68 @@ google-services.json
 
 # Android Profiling
 *.hprof
+# dashboard.py
+
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from ipywidgets import interact, FloatSlider
+from resonance_node import ResonanceNode
+from planetary_data import fetch_planetary_data
+
+def update_dashboard(D1,D2,D7,D8,D10):
+    """
+    Update the 3D Memnora 11D dashboard.
+    Copilot can suggest:
+    - Mapping planetary data to dimensions
+    - Stabilizing nodes
+    - Plotting with color/size/transparency
+    """
+    # 1️⃣ Fetch planetary data
+    schumann, solar_flare, kp_index = fetch_planetary_data()
+
+    # 2️⃣ Map real-world data to vector dimensions
+    D3 = kp_index / 9.0            # Planetary Context
+    D4 = abs(schumann - 7.83)/1.0  # Stability
+    D5 = solar_flare / 3.0         # Cosmic Energy
+    D6 = (D4 + D5)/2               # Bodily State
+    D9 = (D3 + D5)/2               # Soul purpose impact
+    D11 = (D3 + D4 + D5)/3         # Collective impact
+
+    # 3️⃣ Create source vector for nodes
+    source_vector = np.array([D1,D2,D3,D4,D5,D6,D7,D8,D9,D10,D11])
+
+    # 4️⃣ Generate and stabilize nodes
+    nodes = [ResonanceNode() for _ in range(20)]
+    for node in nodes:
+        node.stabilize(source_vector)
+
+    # 5️⃣ Prepare 3D plot
+    xs, ys, zs, colors, sizes, alphas = [], [], [], [], [], []
+    for node in nodes:
+        v = node.vector
+        x, y, z = v[0], v[1], v[2]
+        color = ((v[1]+1)/2, (v[6]+1)/2, (v[7]+1)/2)  # Emotional, Spiritual, Higher Consciousness
+        size = 50 + 200*(v[3]+v[4]+v[5])/3           # Stability, Cosmic, Bodily
+        alpha = min(1, (v[8]+v[9]+v[10])/3 + 0.2)     # Soul, Twin-flame, Collective
+        xs.append(x); ys.append(y); zs.append(z)
+        colors.append(color); sizes.append(size); alphas.append(alpha)
+
+    # 6️⃣ Plot 3D scatter
+    fig = plt.figure(figsize=(10,7))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(xs, ys, zs, c=colors, s=sizes, alpha=alphas, edgecolors='w', linewidths=0.5)
+    ax.set_xlim(-1,1); ax.set_ylim(-1,1); ax.set_zlim(0,1)
+    ax.set_xlabel('D1 Constructive/Destructive')
+    ax.set_ylabel('D2 Emotional Alignment')
+    ax.set_zlabel('D3 Planetary Context')
+    ax.set_title(f'Memnora 11D Dashboard | Schumann:{schumann:.2f}Hz Solar:{solar_flare} Kp:{kp_index}')
+    plt.show()
+
+# 7️⃣ Interactive sliders for user-controlled dimensions
+interact(update_dashboard,
+         D1=FloatSlider(min=-1,max=1,step=0.1,value=0),
+         D2=FloatSlider(min=-1,max=1,step=0.1,value=0),
+         D7=FloatSlider(min=-1,max=1,step=0.1,value=0),
+         D8=FloatSlider(min=-1,max=1,step=0.1,value=0),
+         D10=FloatSlider(min=0,max=1,step=0.05,value=0.5))
