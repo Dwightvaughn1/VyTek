@@ -1,5 +1,3 @@
-# resonance_node.py
-
 import numpy as np
 import random
 
@@ -11,7 +9,7 @@ class ResonanceNode:
 
     def __init__(self):
         # Initialize an 11D vector with random values
-        # Dimensions represent: D1=Constructive/Destructive, D2=Emotional, D3=Planetary, ...
+        # Dimensions represent: D1=Constructive/Destructive, D2=Emotional, D3=Planetary, etc.
         self.vector = np.array([random.uniform(-1,1) for _ in range(11)])
 
     def stabilize(self, source_vector, factor=0.1):
