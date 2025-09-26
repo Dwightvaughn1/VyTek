@@ -1,4 +1,6 @@
-Add resonance_node.py with 11D ResonanceNode class
+# resonance_node.py
+# 11D Resonance Node for Memnora
+
 import numpy as np
 import random
 
@@ -10,14 +12,18 @@ class ResonanceNode:
 
     def __init__(self):
         # Initialize an 11D vector with random values
-        # Dimensions represent: D1=Constructive/Destructive, D2=Emotional, D3=Planetary, etc.
-        self.vector = np.array([random.uniform(-1,1) for _ in range(11)])
+        # Dimensions: D1=Constructive/Destructive, D2=Emotional, D3=Planetary, etc.
+        self.vector = np.array([random.uniform(-1, 1) for _ in range(11)])
 
     def stabilize(self, source_vector, factor=0.1):
         """
         Simulates the Infinity Orbs process:
         Pull the node toward a source coherence vector.
         """
+        # Ensure source_vector is the correct shape
+        if len(source_vector) != 11:
+            raise ValueError("source_vector must have 11 dimensions")
+
         # Calculate coherence score with the source vector
         coherence_score = np.dot(self.vector, source_vector)
 
