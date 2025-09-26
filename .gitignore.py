@@ -1,4 +1,3 @@
-Add .gitignore for Python and build artifacts
 # Python
 __pycache__/
 *.pyc
@@ -18,6 +17,9 @@ env/
 # OS
 .DS_Store
 Thumbs.db
-
-# Mac / Windows
 *.swp
+
+# Build / Distribution
+build/
+dist/
+*.egg-info/
