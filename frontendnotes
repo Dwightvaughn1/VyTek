@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Genwealth Solutions - Memnora Dashboard</title>
+<style>
+  body {
+    margin:0;
+    font-family: Arial, sans-serif;
+    background-color:#1e1e1e;
+    color:#f0f0f0;
+  }
+  header {
+    background-color:#0a9396;
+    padding:12px 20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  header h1 { margin:0; font-size:1.4em; }
+  header nav a {
+    color:#fff; text-decoration:none; margin-left:15px;
+    font-weight:bold;
+  }
+  #dashboard {
+    display:flex; flex-wrap:wrap; padding:20px;
+  }
+  #canvas-container {
+    flex:2; min-width:600px; height:600px; position:relative; background:#111;
+    border:2px solid #0a9396; border-radius:10px; margin-right:20px;
+  }
+  canvas { width:100%; height:100%; display:block; }
+  #info-box {
+    position:absolute; top:10px; left:10px;
+    background:rgba(30,30,30,0.95); border:2px solid cyan;
+    border-radius:8px; padding:10px; max-width:250px; font-size:13px;
+  }
+  #sidebar {
+    flex:1; min-width:250px; background:#222; border-radius:10px; padding:15px;
+    height:600px; overflow-y:auto;
+  }
+  #sidebar h2 { margin-top:0; color:#0ff; }
+  .proposal { padding:6px; margin-bottom:6px; border-bottom:1px solid #333; }
+  .proposal strong { color:#0ff; }
+  input, button { padding:8px; margin:5px 0; width:100%; border-radius:4px; border:none; }
+  button { background:#0a9396; color:#fff; font-weight:bold; cursor:pointer; }
+  button:hover { background:#00b4cc; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Genwealth Solutions - Memnora Dashboard</h1>
+  <nav>
+    <a href="#">Dashboard</a>
+    <a href="#">Profile</a>
+    <a href="#">Logout</a>
+  </nav>
+</header>
+
+<div id="dashboard">
+  <div id="canvas-container">
+    <canvas id="orbCanvas"></canvas>
+    <div id="info-box">Click an orb to see details here.</div>
+  </div>
+  <div id="sidebar">
+    <h2>User Login</h2>
+    <input type="text" id="username" placeholder="Username">
+    <input type="password" id="password" placeholder="Password">
+    <button id="loginBtn">Login</button>
+    
+    <h2>Profile</h2>
+    <div id="profileInfo">No user logged in.</div>
+    
+    <h2>Live $TRY Proposals</h2>
+    <div id="proposalFeed"></div>
+  </div>
+</div>
+
+<script>
+// ---------------------------
+// Canvas & Orbs
+// ---------------------------
+const canvas = document.getElementById('orbCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = canvas.offsetWidth;
+canvas.height = canvas.offsetHeight;
+
+window.addEventListener('resize', () => {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+});
+
+const orbs = [];
+const resonanceMatrix = {};
+
+function generateMockOrb() {
+    const x = Math.random()*canvas.width;
+    const y = Math.random()*canvas.height;
+    const radius = 15 + Math.random()*10;
+    const txHash = Math.random().toString(16).substr(2,12);
+    const from = "0x"+Math.random().toString(16).substr(2,8);
+    const to = "0x"+Math.random().toString(16).substr(2,8);
+    const value = Math.floor(Math.random()*1000);
+    const orbLabel = `orb-${Math.floor(Math.random()*100)}`;
+    resonanceMatrix[txHash] = {
+        txHash, from, to, value, orbLabel, status:"CONFIRMED"
+    };
+    return {x,y,radius,txHash};
+}
+
+function drawOrbs() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (let orb of orbs) {
+        ctx.beginPath();
+        ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI*2);
+        ctx.fillStyle = "#0ff";
+        ctx.fill();
+        ctx.strokeStyle = "#00b4cc";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.closePath();
+        ctx.fillStyle = "#fff";
+        ctx.font = "12px Arial";
+        ctx.fillText(orb.txHash.substr(0,6), orb.x - orb.radius/2, orb.y + 4);
+    }
+}
+
+canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    for (let orb of orbs) {
+        const dx = mx - orb.x;
+        const dy = my - orb.y;
+        if(dx*dx + dy*dy <= orb.radius*orb.radius){
+            const data = resonanceMatrix[orb.txHash];
+            document.getElementById('info-box').innerHTML = `
+                <strong>Orb:</strong> ${data.orbLabel}<br>
+                <strong>TX Hash:</strong> ${data.txHash}<br>
+                <strong>From:</strong> ${data.from}<br>
+                <strong>To:</strong> ${data.to}<br>
+                <strong>Value:</strong> ${data.value}<br>
+                <strong>Status:</strong> ${data.status}
+            `;
+            break;
+        }
+    }
+});
+
+function animate() {
+    drawOrbs();
+    requestAnimationFrame(animate);
+}
+
+// ---------------------------
+// User Login & Profile
+// ---------------------------
+const loginBtn = document.getElementById('loginBtn');
+loginBtn.addEventListener('click', () => {
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    if(username && password){
+        document.getElementById('profileInfo').innerHTML = `
+            <strong>Username:</strong> ${username}<br>
+            <strong>Wallet:</strong> 0x123...ABC<br>
+            <strong>$TRY Balance:</strong> 1,000,000
+        `;
+        alert(`Welcome, ${username}! Live proposals will now update.`);
+    } else {
+        alert("Enter username and password.");
+    }
+});
+
+// ---------------------------
+// Live $TRY Proposal Feed
+// ---------------------------
+const proposalFeed = document.getElementById('proposalFeed');
+
+function addMockProposal() {
+    const id = Math.floor(Math.random()*1000);
+    const amount = Math.floor(Math.random()*5000);
+    const proposal = document.createElement('div');
+    proposal.className = "proposal";
+    proposal.innerHTML = `<strong>Proposal #${id}</strong> - $TRY ${amount} allocated to project "${['Tryfinity','Rchain','Genwealth'][Math.floor(Math.random()*3)]}"`;
+    proposalFeed.prepend(proposal);
+    if(proposalFeed.childNodes.length>10){
+        proposalFeed.removeChild(proposalFeed.lastChild);
+    }
+}
+
+// ---------------------------
+// Initialize
+// ---------------------------
+for(let i=0;i<50;i++){
+    orbs.push(generateMockOrb());
+}
+animate();
+setInterval(addMockProposal,3000);
+
+</script>
+
+</body>
+</html>
