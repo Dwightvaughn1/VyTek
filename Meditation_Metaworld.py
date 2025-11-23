@@ -141,6 +141,38 @@ class ResonancePayload(BaseModel):
     emotion: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
+# Video-related models
+class VideoUploadResponse(BaseModel):
+    video_id: str
+    filename: str
+    status: str
+    message: str
+
+class VideoAnalysisRequest(BaseModel):
+    video_id: str
+
+class VideoAnalysisResponse(BaseModel):
+    video_id: str
+    status: str
+    summary: Optional[str] = None
+    scenes: List[Dict[str, Any]] = []
+    objects: List[Dict[str, Any]] = []
+    speech_transcript: Optional[str] = None
+    resonance_vector: Optional[List[float]] = None
+    coherence_score: Optional[float] = None
+    error: Optional[str] = None
+
+class AnomalyCheckRequest(BaseModel):
+    video_id: Optional[str] = None
+    resonance_vector: Optional[List[float]] = None
+    temporal_patterns: Optional[Dict[str, float]] = None
+
+class AnomalyCheckResponse(BaseModel):
+    coherence_score: int  # -1, 0, or 1
+    explanation: str
+    anomalies_detected: List[str]
+    recommendations: List[str]
+
 # ----------------- Auth endpoints -----------------
 @app.post("/register")
 def register(user: UserCreate, db=Depends(get_db)):
