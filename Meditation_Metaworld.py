@@ -101,6 +101,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app = FastAPI(title="Memnora Resonance Matrix API")
 
+# Initialize VideoSense module
+video_sense = get_video_sense()
+
 # ----------------- Utilities -----------------
 def get_db():
     db = SessionLocal()
