@@ -70,6 +70,30 @@ resonance_events = Table(
     Column("ts", Integer),
 )
 
+# Video analysis tables
+video_analyses = Table(
+    "video_analyses", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id")),
+    Column("video_id", String(255), unique=True, nullable=False),
+    Column("filename", String(255), nullable=False),
+    Column("analysis_status", String(50), default="pending"),
+    Column("resonance_vector", Text),  # JSON string
+    Column("coherence_score", Float),
+    Column("created_at", Integer),
+    Column("updated_at", Integer),
+)
+
+video_scenes = Table(
+    "video_scenes", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("video_analysis_id", Integer, ForeignKey("video_analyses.id")),
+    Column("scene_start_time", Float),
+    Column("scene_end_time", Float),
+    Column("scene_description", Text),
+    Column("resonance_impact", Text),  # JSON string
+)
+
 metadata.create_all(engine)
 SessionLocal = sessionmaker(bind=engine)
 
