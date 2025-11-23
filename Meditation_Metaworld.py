@@ -350,10 +350,356 @@ def list_apikeys(user=Depends(get_current_user), db=Depends(get_db)):
     rows = conn.execute(stmt).fetchall()
     return [{"id": r.id, "label": r.label, "active": r.active} for r in rows]
 
+# ----------------- Video Intelligence Endpoints -----------------
+
+@app.post("/api/video/upload", response_model=VideoUploadResponse)
+async def upload_video(
+    file: UploadFile = File(...),
+    x_api_key: str = Header(None),
+    db=Depends(get_db)
+):
+    """Upload video file for TwelveLabs analysis"""
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Missing X-Api-Key header")
+
+    key_row = validate_api_key(x_api_key, db)
+    if not key_row:
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+
+    # Check subscription
+    conn = db.connection()
+    stmt_user = select(users).where(users.c.id == key_row["user_id"])
+    user_row = conn.execute(stmt_user).first()
+    if not user_row or not user_row.is_subscribed:
+        raise HTTPException(status_code=402, detail="Subscription required")
+
+    # Validate file type
+    allowed_types = ["video/mp4", "video/quicktime", "video/webm", "video/x-msvideo"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {file.content_type}. Allowed types: {allowed_types}"
+        )
+
+    # Check file size (500MB max)
+    max_size = 500 * 1024 * 1024
+    content = await file.read()
+    if len(content) > max_size:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size: 500MB")
+
+    try:
+        # Generate video ID
+        video_id = secrets.token_urlsafe(16)
+
+        # Save file temporarily
+        temp_path = f"/tmp/{video_id}_{file.filename}"
+        with open(temp_path, "wb") as temp_file:
+            temp_file.write(content)
+
+        # Store video record in database
+        current_time = int(time.time())
+        ins = video_analyses.insert().values(
+            user_id=key_row["user_id"],
+            video_id=video_id,
+            filename=file.filename,
+            analysis_status="uploading",
+            created_at=current_time,
+            updated_at=current_time
+        )
+        conn.execute(ins)
+        db.commit()
+
+        # Async upload to TwelveLabs
+        async with TwelveLabsClient() as client:
+            try:
+                twelve_labs_video_id = await client.upload_video(temp_path)
+
+                # Update database with TwelveLabs video ID
+                upd = video_analyses.update().where(
+                    video_analyses.c.video_id == video_id
+                ).values(
+                    analysis_status="uploaded",
+                    updated_at=int(time.time())
+                )
+                conn.execute(upd)
+                db.commit()
+
+                return VideoUploadResponse(
+                    video_id=video_id,
+                    filename=file.filename,
+                    status="uploaded",
+                    message="Video uploaded successfully for analysis"
+                )
+
+            except Exception as e:
+                # Update database with error
+                upd = video_analyses.update().where(
+                    video_analyses.c.video_id == video_id
+                ).values(
+                    analysis_status="upload_failed",
+                    updated_at=int(time.time())
+                )
+                conn.execute(upd)
+                db.commit()
+
+                raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+
+@app.get("/api/video/analysis/{video_id}", response_model=VideoAnalysisResponse)
+async def get_video_analysis(
+    video_id: str,
+    x_api_key: str = Header(None),
+    db=Depends(get_db)
+):
+    """Retrieve video analysis results"""
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Missing X-Api-Key header")
+
+    key_row = validate_api_key(x_api_key, db)
+    if not key_row:
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+
+    # Check video ownership
+    conn = db.connection()
+    stmt = select(video_analyses).where(
+        video_analyses.c.video_id == video_id,
+        video_analyses.c.user_id == key_row["user_id"]
+    )
+    video_row = conn.execute(stmt).first()
+
+    if not video_row:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    # Try to get cached analysis first
+    cached_payload = video_sense.get_cached_analysis(video_id)
+    if cached_payload:
+        return VideoAnalysisResponse(
+            video_id=video_id,
+            status="completed",
+            summary=cached_payload.metadata.get('summary') if cached_payload.metadata else None,
+            scenes=[scene.__dict__ for scene in cached_payload.scenes] if cached_payload.scenes else [],
+            objects=[obj.__dict__ for obj in cached_payload.objects] if cached_payload.objects else [],
+            speech_transcript=cached_payload.speech_transcript,
+            resonance_vector=cached_payload.resonance_vector,
+            coherence_score=cached_payload.coherence_score
+        )
+
+    # If no cached result, check TwelveLabs API
+    try:
+        async with TwelveLabsClient() as client:
+            status_data = await client.get_analysis_status(video_id)
+
+            if status_data.get('status') == 'completed':
+                # Analysis complete, fetch all results
+                summary = await client.get_video_summary(video_id)
+                scenes = await client.get_video_scenes(video_id)
+                objects = await client.get_video_objects(video_id)
+                transcript = await client.get_speech_transcript(video_id)
+                embeddings = await client.get_video_embeddings(video_id)
+
+                # Update database
+                upd = video_analyses.update().where(
+                    video_analyses.c.video_id == video_id
+                ).values(
+                    analysis_status="completed",
+                    updated_at=int(time.time())
+                )
+                conn.execute(upd)
+                db.commit()
+
+                return VideoAnalysisResponse(
+                    video_id=video_id,
+                    status="completed",
+                    summary=summary,
+                    scenes=scenes,
+                    objects=objects,
+                    speech_transcript=transcript,
+                    resonance_vector=embeddings[:11] if embeddings and len(embeddings) >= 11 else None,
+                    coherence_score=0.7  # Placeholder - would be calculated by VideoSense
+                )
+
+            elif status_data.get('status') == 'failed':
+                # Analysis failed
+                upd = video_analyses.update().where(
+                    video_analyses.c.video_id == video_id
+                ).values(
+                    analysis_status="failed",
+                    updated_at=int(time.time())
+                )
+                conn.execute(upd)
+                db.commit()
+
+                return VideoAnalysisResponse(
+                    video_id=video_id,
+                    status="failed",
+                    error=status_data.get('error', 'Analysis failed')
+                )
+
+            else:
+                # Still processing
+                return VideoAnalysisResponse(
+                    video_id=video_id,
+                    status=status_data.get('status', 'unknown')
+                )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis retrieval failed: {str(e)}")
+
+
+@app.post("/api/video/anomaly-check", response_model=AnomalyCheckResponse)
+async def check_video_anomalies(
+    request: AnomalyCheckRequest,
+    x_api_key: str = Header(None),
+    db=Depends(get_db)
+):
+    """Run anomaly detection on video patterns"""
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Missing X-Api-Key header")
+
+    key_row = validate_api_key(x_api_key, db)
+    if not key_row:
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+
+    # Get video data
+    payload = None
+    if request.video_id:
+        # Try cache first
+        payload = video_sense.get_cached_analysis(request.video_id)
+
+        # If not in cache, try to get from database
+        if not payload:
+            conn = db.connection()
+            stmt = select(video_analyses).where(
+                video_analyses.c.video_id == request.video_id,
+                video_analyses.c.user_id == key_row["user_id"]
+            )
+            video_row = conn.execute(stmt).first()
+
+            if not video_row:
+                raise HTTPException(status_code=404, detail="Video not found")
+
+            # Create minimal payload from database data
+            payload = VideoResonancePayload(
+                video_id=request.video_id,
+                spectrum={},
+                metadata={},
+                resonance_vector=request.resonance_vector,
+                temporal_patterns=request.temporal_patterns
+            )
+
+    elif request.resonance_vector:
+        # Create payload from provided resonance vector
+        payload = VideoResonancePayload(
+            video_id="custom",
+            spectrum={},
+            metadata={},
+            resonance_vector=request.resonance_vector,
+            temporal_patterns=request.temporal_patterns or {}
+        )
+
+    if not payload:
+        raise HTTPException(status_code=400, detail="No video data provided")
+
+    # Run DARS validation
+    try:
+        coherence_score, explanation = video_sense.validate_with_dars(payload)
+
+        # Generate anomalies and recommendations
+        anomalies_detected = []
+        recommendations = []
+
+        if coherence_score == -1:
+            anomalies_detected.extend([
+                "Dissonant resonance patterns detected",
+                "Irregular temporal flow",
+                "Unusual object density"
+            ])
+            recommendations.extend([
+                "Review video content for coherence",
+                "Check for anomalous activities",
+                "Consider environmental factors"
+            ])
+        elif coherence_score == 0:
+            anomalies_detected.append("Neutral coherence - requires further analysis")
+            recommendations.append("Monitor for pattern changes")
+
+        return AnomalyCheckResponse(
+            coherence_score=coherence_score,
+            explanation=explanation,
+            anomalies_detected=anomalies_detected,
+            recommendations=recommendations
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Anomaly detection failed: {str(e)}")
+
+
+@app.websocket("/ws/video-analysis")
+async def ws_video_analysis(websocket: WebSocket, api_key: str = ""):
+    """WebSocket for real-time video analysis updates"""
+    if not api_key:
+        await websocket.close(code=1008)
+        return
+
+    db = SessionLocal()
+    try:
+        key_row = validate_api_key(api_key, db)
+        if not key_row:
+            await websocket.close(code=1008)
+            return
+
+        api_key_id = key_row["id"]
+        await manager.connect(websocket, api_key_id)
+
+        try:
+            while True:
+                # Receive video analysis requests
+                data = await websocket.receive_json()
+
+                if data.get("type") == "analysis_request":
+                    video_id = data.get("video_id")
+                    if video_id:
+                        # Check analysis status and send updates
+                        try:
+                            async with TwelveLabsClient() as client:
+                                status_data = await client.get_analysis_status(video_id)
+
+                                await manager.broadcast(api_key_id, {
+                                    "type": "analysis_update",
+                                    "video_id": video_id,
+                                    "status": status_data.get('status'),
+                                    "progress": status_data.get('progress', 0),
+                                    "ts": int(time.time())
+                                })
+
+                        except Exception as e:
+                            await manager.broadcast(api_key_id, {
+                                "type": "analysis_error",
+                                "video_id": video_id,
+                                "error": str(e),
+                                "ts": int(time.time())
+                            })
+
+                elif data.get("type") == "ping":
+                    await websocket.send_text("pong")
+
+        except WebSocketDisconnect:
+            manager.disconnect(websocket, api_key_id)
+
+    finally:
+        db.close()
+
 # ----------------- Minimal health check -----------------
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.1"}
+    return {"status": "ok", "version": "0.1", "video_intelligence": "enabled"}
 
 # ----------------- Run if executed directly -----------------
 if __name__ == "__main__":
