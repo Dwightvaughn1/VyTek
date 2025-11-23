@@ -12,18 +12,23 @@ Notes:
 import os
 import secrets
 import time
+import asyncio
 from typing import Optional, Dict, Any, List
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Header, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Header, Request, UploadFile, File
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy import (create_engine, Table, Column, Integer, String, Boolean, Text, MetaData, select, ForeignKey)
+from sqlalchemy import (create_engine, Table, Column, Integer, String, Boolean, Text, MetaData, select, ForeignKey, Float)
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 import stripe
+
+# Import VideoSense components
+from video_sense import VideoSense, VideoResonancePayload, get_video_sense
+from twelvelabs_client import TwelveLabsClient
 
 # --- CONFIG (change for production) ---
 SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret_key_for_prod")
